@@ -349,7 +349,7 @@ function ReportsPage({ events }: { events: EventItem[] }) {
   const [min, setMin] = useState('0');
   const [days, setDays] = useState('3650');
 
-  const rows = events.filter((e) =>
+  const rows = events.filter(e =>
     e.magnitude >= Number(min) &&
     e.place.toLowerCase().includes(q.toLowerCase()) &&
     new Date(e.occurred_at).getTime() >=
@@ -357,287 +357,250 @@ function ReportsPage({ events }: { events: EventItem[] }) {
   );
 
   const exportExcel = () => {
-    if (!rows.length) {
-      alert('No hay registros para exportar con los filtros seleccionados.');
-      return;
-    }
+    const fecha = new Date().toISOString().slice(0, 10);
 
-    const sortedRows = [...rows].sort(
-      (a, b) =>
-        new Date(b.occurred_at).getTime() -
-        new Date(a.occurred_at).getTime()
-    );
-
-    const magnitudes = rows.map((e) => Number(e.magnitude));
-    const depths = rows.map((e) => Number(e.depth_km));
-
-    const maxMagnitude = Math.max(...magnitudes);
-    const avgMagnitude =
-      magnitudes.reduce((sum, value) => sum + value, 0) /
-      magnitudes.length;
-    const avgDepth =
-      depths.reduce((sum, value) => sum + value, 0) /
-      depths.length;
-
-    const generatedAt = new Date().toLocaleString('es-PE', {
-      timeZone: 'UTC',
-    });
+    const headers = [
+      'ID EXTERNO',
+      'FUENTE',
+      'FECHA Y HORA UTC',
+      'LATITUD',
+      'LONGITUD',
+      'MAGNITUD',
+      'PROFUNDIDAD (KM)',
+      'UBICACIÓN',
+      'URL DE ORIGEN'
+    ];
 
     const data = [
-      ['REPORTE DE REGISTROS SÍSMICOS'],
-      ['SismoPlatform Enterprise | Reporte de eventos registrados'],
-      [`Fecha de generación: ${generatedAt} UTC`],
-      [],
-      [
-        'TOTAL DE REGISTROS', '',
-        'MAGNITUD MÁXIMA', '',
-        'MAGNITUD PROMEDIO', '',
-        'PROFUNDIDAD PROMEDIO (KM)', '', '', '',
-      ],
+      ['REPORTE DE EVENTOS SÍSMICOS', '', '', '', '', '', '', '', ''],
+      [`Generado el ${new Date().toLocaleString('es-PE')} · SismoPlatform Enterprise`, '', '', '', '', '', '', '', ''],
+      ['', '', '', '', '', '', '', '', ''],
+      ['TOTAL DE REGISTROS', '', 'MAGNITUD PROMEDIO', '', 'MAGNITUD MÁXIMA', '', 'PROFUNDIDAD PROMEDIO', '', ''],
       [
         rows.length, '',
-        maxMagnitude, '',
-        Number(avgMagnitude.toFixed(2)), '',
-        Number(avgDepth.toFixed(2)), '', '', '',
+        rows.length
+          ? rows.reduce((s, e) => s + Number(e.magnitude || 0), 0) / rows.length
+          : 0, '',
+        rows.length
+          ? Math.max(...rows.map(e => Number(e.magnitude || 0)))
+          : 0, '',
+        rows.length
+          ? rows.reduce((s, e) => s + Number(e.depth_km || 0), 0) / rows.length
+          : 0,
+        '', ''
       ],
-      [],
-      [
-        'N.º',
-        'Fecha y hora (UTC)',
-        'Magnitud',
-        'Ubicación',
-        'Profundidad (km)',
-        'Latitud',
-        'Longitud',
-        'Fuente / ID',
-        'URL de procedencia',
-      ],
-      ...sortedRows.map((e, index) => [
-        index + 1,
-        new Date(e.occurred_at).toISOString().replace('T', ' ').slice(0, 19),
-        Number(e.magnitude),
-        e.place || 'No especificada',
-        Number(e.depth_km),
+      ['', '', '', '', '', '', '', '', ''],
+      headers,
+      ...rows.map(e => [
+        e.external_id ?? '',
+        e.source_id ?? '',
+        e.occurred_at ?? '',
         Number(e.latitude),
         Number(e.longitude),
-        e.source_id || e.external_id || 'No disponible',
-        e.source_url || '',
-      ]),
+        Number(e.magnitude),
+        Number(e.depth_km ?? 0),
+        e.place ?? '',
+        e.source_url ?? ''
+      ])
     ];
 
     const ws = XLSX.utils.aoa_to_sheet(data);
 
-    // Título y encabezados superiores.
+    // Título y tarjetas de resumen
     ws['!merges'] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 9 } },
-      { s: { r: 1, c: 0 }, e: { r: 1, c: 9 } },
-      { s: { r: 2, c: 0 }, e: { r: 2, c: 9 } },
-
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 8 } },
+      { s: { r: 3, c: 0 }, e: { r: 3, c: 1 } },
+      { s: { r: 3, c: 2 }, e: { r: 3, c: 3 } },
+      { s: { r: 3, c: 4 }, e: { r: 3, c: 5 } },
+      { s: { r: 3, c: 6 }, e: { r: 3, c: 8 } },
       { s: { r: 4, c: 0 }, e: { r: 4, c: 1 } },
       { s: { r: 4, c: 2 }, e: { r: 4, c: 3 } },
       { s: { r: 4, c: 4 }, e: { r: 4, c: 5 } },
-      { s: { r: 4, c: 6 }, e: { r: 4, c: 7 } },
-      { s: { r: 4, c: 8 }, e: { r: 4, c: 9 } },
-
-      { s: { r: 5, c: 0 }, e: { r: 5, c: 1 } },
-      { s: { r: 5, c: 2 }, e: { r: 5, c: 3 } },
-      { s: { r: 5, c: 4 }, e: { r: 5, c: 5 } },
-      { s: { r: 5, c: 6 }, e: { r: 5, c: 7 } },
-      { s: { r: 5, c: 8 }, e: { r: 5, c: 9 } },
+      { s: { r: 4, c: 6 }, e: { r: 4, c: 8 } }
     ];
 
+    const border = {
+      top: { style: 'thin', color: { rgb: 'D5DEE9' } },
+      bottom: { style: 'thin', color: { rgb: 'D5DEE9' } },
+      left: { style: 'thin', color: { rgb: 'D5DEE9' } },
+      right: { style: 'thin', color: { rgb: 'D5DEE9' } }
+    };
+
     const navy = '17365D';
-    const blue = '24476B';
-    const lightBlue = 'DCE6F1';
-    const borderColor = 'D5DEE8';
+    const blue = 'DCE6F1';
     const white = 'FFFFFF';
 
-    const border = {
-      top: { style: 'thin', color: borderColor },
-      bottom: { style: 'thin', color: borderColor },
-      left: { style: 'thin', color: borderColor },
-      right: { style: 'thin', color: borderColor },
-    };
-
-    // Estilo del título.
+    // Título
     ws['A1'].s = {
-      font: { name: 'Aptos Display', sz: 20, bold: true, color: white },
-      fill: { patternType: 'solid', fgColor: { rgb: navy } },
-      alignment: { horizontal: 'center', vertical: 'center' },
+      font: { name: 'Aptos Display', sz: 20, bold: true, color: { rgb: white } },
+      fill: { fgColor: { rgb: navy } },
+      alignment: { horizontal: 'left', vertical: 'center' }
     };
 
-    ws['A2'].s = {
-      font: { name: 'Aptos', sz: 11, italic: true, color: white },
-      fill: { patternType: 'solid', fgColor: { rgb: blue } },
-      alignment: { horizontal: 'center', vertical: 'center' },
-    };
-
-    ws['A3'].s = {
-      font: { name: 'Aptos', sz: 10, color: '526579' },
-      alignment: { horizontal: 'right', vertical: 'center' },
-    };
-
-    // Tarjetas de resumen con bordes y colores corporativos.
-    const labelCells = ['A5', 'C5', 'E5', 'G5', 'I5'];
-    const valueCells = ['A6', 'C6', 'E6', 'G6', 'I6'];
-
-    labelCells.forEach((cell) => {
+    // Fondo completo del encabezado
+    for (let c = 0; c < 9; c++) {
+      const cell = XLSX.utils.encode_cell({ r: 0, c });
+      if (!ws[cell]) ws[cell] = { v: '', t: 's' };
       ws[cell].s = {
-        font: { name: 'Aptos', sz: 9, bold: true, color: white },
-        fill: { patternType: 'solid', fgColor: { rgb: blue } },
-        alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
-        border,
+        fill: { fgColor: { rgb: navy } },
+        font: { name: 'Aptos Display', sz: 20, bold: true, color: { rgb: white } },
+        alignment: { vertical: 'center' }
       };
-    });
+    }
 
-    valueCells.forEach((cell) => {
+    for (let c = 0; c < 9; c++) {
+      const cell = XLSX.utils.encode_cell({ r: 1, c });
+      if (!ws[cell]) ws[cell] = { v: '', t: 's' };
       ws[cell].s = {
-        font: { name: 'Aptos Display', sz: 16, bold: true, color: navy },
-        fill: { patternType: 'solid', fgColor: { rgb: 'F0F5FA' } },
-        alignment: { horizontal: 'center', vertical: 'center' },
-        border,
+        fill: { fgColor: { rgb: 'EAF0F6' } },
+        font: { name: 'Aptos', sz: 10, italic: true, color: { rgb: '52657A' } },
+        alignment: { vertical: 'center' }
       };
-    });
+    }
 
-    // Encabezados de la tabla.
-    const headerRow = 7;
-    const lastRow = headerRow + sortedRows.length;
+    // Tarjetas de resumen con cuadros y bordes
+    for (const r of [3, 4]) {
+      for (let c = 0; c < 9; c++) {
+        const cell = XLSX.utils.encode_cell({ r, c });
+        if (!ws[cell]) ws[cell] = { v: '', t: 's' };
+        ws[cell].s = {
+          fill: { fgColor: { rgb: r === 3 ? navy : 'F3F7FB' } },
+          font: {
+            name: 'Aptos',
+            sz: r === 3 ? 9 : 16,
+            bold: true,
+            color: { rgb: r === 3 ? white : navy }
+          },
+          alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+          border
+        };
+      }
+    }
+
+    // Formato de la tabla
+    const headerRow = 6;
+    const lastRow = data.length - 1;
 
     for (let c = 0; c < 9; c++) {
       const cell = XLSX.utils.encode_cell({ r: headerRow, c });
       ws[cell].s = {
-        font: { name: 'Aptos', sz: 10, bold: true, color: white },
-        fill: { patternType: 'solid', fgColor: { rgb: navy } },
-        alignment: {
-          horizontal: 'center',
-          vertical: 'center',
-          wrapText: true,
-        },
-        border,
+        fill: { fgColor: { rgb: navy } },
+        font: { name: 'Aptos', bold: true, color: { rgb: white }, sz: 10 },
+        alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+        border
       };
     }
 
-    // Formato de los registros.
-    for (let r = headerRow + 1; r <= lastRow; r++) {
+    for (let r = 7; r <= lastRow; r++) {
       for (let c = 0; c < 9; c++) {
         const cell = XLSX.utils.encode_cell({ r, c });
-        if (!ws[cell]) continue;
+        if (!ws[cell]) ws[cell] = { v: '', t: 's' };
 
         ws[cell].s = {
-          font: { name: 'Aptos', sz: 10, color: '263746' },
+          font: { name: 'Aptos', sz: 10, color: { rgb: '263445' } },
           fill: {
-            patternType: 'solid',
-            fgColor: { rgb: r % 2 === 0 ? 'F2F6FA' : white },
+            fgColor: {
+              rgb: r % 2 === 0 ? 'F1F5F9' : white
+            }
           },
           alignment: {
             vertical: 'center',
-            horizontal: [0, 2, 4, 5, 6].includes(c) ? 'center' : 'left',
-            wrapText: c === 3 || c === 7,
+            horizontal: c >= 3 && c <= 6 ? 'center' : 'left',
+            wrapText: c === 7
           },
-          border,
+          border
         };
       }
 
-      // Magnitud con un decimal.
-      const magnitudeCell = `C${r + 1}`;
-      if (ws[magnitudeCell]) {
-        ws[magnitudeCell].z = '0.0';
-        const magnitude = Number(ws[magnitudeCell].v);
+      // Formatos numéricos
+      ['D', 'E'].forEach(col => {
+        const cell = ws[`${col}${r + 1}`];
+        if (cell) cell.z = '0.00000';
+      });
 
-        if (magnitude >= 6) {
-          ws[magnitudeCell].s = {
-            ...ws[magnitudeCell].s,
-            font: { name: 'Aptos', sz: 10, bold: true, color: 'C00000' },
-            fill: { patternType: 'solid', fgColor: { rgb: 'FCE4D6' } },
-          };
-        } else if (magnitude >= 4) {
-          ws[magnitudeCell].s = {
-            ...ws[magnitudeCell].s,
-            font: { name: 'Aptos', sz: 10, bold: true, color: '9C6500' },
-            fill: { patternType: 'solid', fgColor: { rgb: 'FFF2CC' } },
-          };
-        }
-      }
-
-      [`E${r + 1}`, `F${r + 1}`, `G${r + 1}`].forEach((cell) => {
-        if (ws[cell]) ws[cell].z = '0.0000';
+      ['F', 'G'].forEach(col => {
+        const cell = ws[`${col}${r + 1}`];
+        if (cell) cell.z = '0.00';
       });
     }
 
-    // Anchos de columnas para que el reporte sea legible.
     ws['!cols'] = [
-      { wch: 7 },
-      { wch: 22 },
+      { wch: 19 },
+      { wch: 14 },
+      { wch: 23 },
+      { wch: 13 },
+      { wch: 13 },
       { wch: 12 },
+      { wch: 19 },
       { wch: 38 },
-      { wch: 18 },
-      { wch: 14 },
-      { wch: 14 },
-      { wch: 24 },
-      { wch: 48 },
-      { wch: 4 },
+      { wch: 48 }
     ];
 
     ws['!rows'] = [
       { hpt: 36 },
       { hpt: 24 },
-      { hpt: 20 },
       { hpt: 10 },
-      { hpt: 30 },
-      { hpt: 32 },
+      { hpt: 25 },
+      { hpt: 34 },
       { hpt: 10 },
-      { hpt: 32 },
+      { hpt: 34 },
+      ...rows.map(() => ({ hpt: 23 }))
     ];
 
-    // Filtros para buscar registros dentro de Excel.
-    ws['!autofilter'] = {
-      ref: `A8:I${lastRow + 1}`,
-    };
+    if (rows.length > 0) {
+      ws['!autofilter'] = {
+        ref: `A7:I${lastRow + 1}`
+      };
+    }
 
-    // Configuración de impresión.
+    ws['!freeze'] = { xSplit: 0, ySplit: 7 };
+
     ws['!margins'] = {
-      left: 0.25,
-      right: 0.25,
+      left: 0.3,
+      right: 0.3,
       top: 0.5,
       bottom: 0.5,
       header: 0.2,
-      footer: 0.2,
-    };
-
-    ws['!pageSetup'] = {
-      orientation: 'landscape',
-      fitToWidth: 1,
-      fitToHeight: 0,
-      paperSize: 9,
+      footer: 0.2
     };
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Reporte sísmico');
 
-    XLSX.writeFile(
-      wb,
-      `Reporte_Sismico_${new Date().toISOString().slice(0, 10)}.xlsx`
-    );
+    XLSX.writeFile(wb, `Reporte_Sismico_${fecha}.xlsx`);
   };
+
+  const exportJson = () =>
+    downloadFile(
+      `sismos-${new Date().toISOString().slice(0, 10)}.json`,
+      JSON.stringify({
+        generated_at: new Date().toISOString(),
+        record_count: rows.length,
+        source_note: 'Eventos reportados; no predicciones.',
+        events: rows
+      }, null, 2),
+      'application/json'
+    );
 
   return (
     <Panel
       title="Generador de reportes"
-      subtitle="Consulta los registros y exporta un Excel con presentación profesional"
+      subtitle="Filtra y exporta reportes sísmicos profesionales en Excel o JSON"
     >
       <div className="toolbar">
         <div className="searchbox">
           <Search size={16} />
           <input
             value={q}
-            onChange={(e) => setQ(e.target.value)}
+            onChange={e => setQ(e.target.value)}
             placeholder="Ubicación / región"
           />
         </div>
 
         <label>
           Magnitud mínima
-          <select value={min} onChange={(e) => setMin(e.target.value)}>
+          <select value={min} onChange={e => setMin(e.target.value)}>
             <option value="0">Todas</option>
             <option value="2">2+</option>
             <option value="4">4+</option>
@@ -648,7 +611,7 @@ function ReportsPage({ events }: { events: EventItem[] }) {
 
         <label>
           Período
-          <select value={days} onChange={(e) => setDays(e.target.value)}>
+          <select value={days} onChange={e => setDays(e.target.value)}>
             <option value="1">24 horas</option>
             <option value="7">7 días</option>
             <option value="30">30 días</option>
@@ -662,26 +625,33 @@ function ReportsPage({ events }: { events: EventItem[] }) {
       <div className="report-card">
         <FileBarChart size={28} />
         <div>
-          <b>Reporte de registros sísmicos</b>
+          <b>Eventos sísmicos filtrados</b>
           <p>
-            Excel con resumen estadístico, tabla ordenada, filtros,
-            formatos numéricos y presentación empresarial.
+            Excel con resumen, tabla estructurada, bordes, colores,
+            filtros y datos de procedencia.
           </p>
-          <small>{rows.length} registros encontrados</small>
+          <small>
+            {rows.length} registros · corte {new Date().toLocaleString('es-PE')}
+          </small>
         </div>
 
         <button className="primary" onClick={exportExcel}>
           Exportar Excel (.xlsx)
         </button>
+
+        <button className="secondary" onClick={exportJson}>
+          Exportar JSON
+        </button>
       </div>
 
       <p className="muted-note">
-        El reporte utiliza los eventos cargados desde la API que coinciden
-        con los filtros seleccionados. No agrega registros inventados.
+        El reporte contiene los registros disponibles en el sistema y
+        respeta los filtros seleccionados.
       </p>
     </Panel>
   );
 }
+
 function downloadCSV(filename:string,header:string[],rows:any[][]){const lines=[header,...rows].map(row=>row.map(v=>`"${String(v??'').replaceAll('"','""')}"`).join(','));downloadFile(filename,'\ufeff'+lines.join('\r\n'),'text/csv;charset=utf-8')}
 function downloadFile(filename:string,content:string,type:string){const blob=new Blob([content],{type});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 function InfoPage({title,text}:{title:string;text:string}){return <Panel title={title} subtitle="Módulo del plan empresarial"><div className="placeholder"><div className="placeholder-icon"><Settings size={25}/></div><h3>Base del módulo preparada</h3><p>{text}</p><span className="tag muted">Pendiente de implementación operativa</span></div></Panel>}
