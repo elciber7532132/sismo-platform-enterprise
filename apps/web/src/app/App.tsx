@@ -343,7 +343,345 @@ function AlertCenterPage({ events }: { events: EventItem[] }) {
   );
 }
 function UsersRolesPage(){type User={id:string;name:string;email:string;role:string;enabled:boolean};const [users,setUsers]=useState<User[]>(()=>{try{return JSON.parse(localStorage.getItem('sismo-demo-users')||'[{"id":"u-admin","name":"Administrador de demostración","email":"admin@example.local","role":"Administrador","enabled":true},{"id":"u-analyst","name":"Analista de demostración","email":"analista@example.local","role":"Analista","enabled":true}]')}catch{return []}});const [name,setName]=useState('');const [email,setEmail]=useState('');const [role,setRole]=useState('Analista');const [q,setQ]=useState('');useEffect(()=>{localStorage.setItem('sismo-demo-users',JSON.stringify(users))},[users]);const add=()=>{if(!name.trim()||!/^\S+@\S+\.\S+$/.test(email))return;if(users.some(u=>u.email.toLowerCase()===email.toLowerCase())){alert('Ese correo ya existe en la lista de demostración.');return}setUsers(old=>[{id:crypto.randomUUID(),name:name.trim(),email:email.trim(),role,enabled:true},...old]);setName('');setEmail('')};return <><div className="banner warning">Modo demostración local: estos roles no protegen la API ni equivalen a autenticación. No uses datos personales reales.</div><Panel title="Usuarios y roles (demostración)" subtitle="Altas, búsqueda, activación y asignación de roles guardadas en este navegador"><div className="toolbar"><label>Nombre<input value={name} onChange={e=>setName(e.target.value)} placeholder="Nombre de usuario"/></label><label>Correo<input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="usuario@dominio.com"/></label><label>Rol<select value={role} onChange={e=>setRole(e.target.value)}><option>Administrador</option><option>Analista</option><option>Operador</option><option>Auditor</option><option>Consulta</option></select></label><button className="primary" onClick={add}>Agregar usuario</button><div className="searchbox"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar usuario…"/></div></div><div className="table-wrap"><table><thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{users.filter(u=>(u.name+' '+u.email+' '+u.role).toLowerCase().includes(q.toLowerCase())).map(u=><tr key={u.id}><td>{u.name}</td><td>{u.email}</td><td><select value={u.role} onChange={e=>setUsers(old=>old.map(x=>x.id===u.id?{...x,role:e.target.value}:x))}><option>Administrador</option><option>Analista</option><option>Operador</option><option>Auditor</option><option>Consulta</option></select></td><td><span className={`tag ${u.enabled?'good':'muted'}`}>{u.enabled?'Activo':'Inactivo'}</span></td><td><button className="secondary" onClick={()=>setUsers(old=>old.map(x=>x.id===u.id?{...x,enabled:!x.enabled}:x))}>{u.enabled?'Desactivar':'Activar'}</button> <button className="secondary" onClick={()=>{if(confirm('¿Eliminar este usuario de demostración?'))setUsers(old=>old.filter(x=>x.id!==u.id))}}>Eliminar</button></td></tr>)}</tbody></table></div></Panel></>}
-function ReportsPage({events}:{events:EventItem[]}){const [q,setQ]=useState('');const [min,setMin]=useState('0');const [days,setDays]=useState('3650');const rows=events.filter(e=>e.magnitude>=Number(min)&&e.place.toLowerCase().includes(q.toLowerCase())&&new Date(e.occurred_at).getTime()>=Date.now()-Number(days)*86400000);const exportCsv=()=>downloadCSV(`sismos-${new Date().toISOString().slice(0,10)}.csv`,['external_id','source','occurred_at_utc','latitude','longitude','magnitude','depth_km','place','source_url'],rows.map(e=>[e.external_id,e.source_id,e.occurred_at,e.latitude,e.longitude,e.magnitude,e.depth_km,e.place,e.source_url??'']));const exportJson=()=>downloadFile(`sismos-${new Date().toISOString().slice(0,10)}.json`,JSON.stringify({generated_at:new Date().toISOString(),record_count:rows.length,source_note:'Eventos reportados; no predicciones.',events:rows},null,2),'application/json');return <Panel title="Generador de reportes" subtitle="Filtra una muestra y exporta datos trazables en CSV o JSON"><div className="toolbar"><div className="searchbox"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Ubicación / región"/></div><label>Magnitud mínima<select value={min} onChange={e=>setMin(e.target.value)}><option value="0">Todas</option><option value="2">2+</option><option value="4">4+</option><option value="5">5+</option><option value="6">6+</option></select></label><label>Período<select value={days} onChange={e=>setDays(e.target.value)}><option value="1">24 horas</option><option value="7">7 días</option><option value="30">30 días</option><option value="90">90 días</option><option value="365">1 año</option><option value="3650">Todo lo cargado</option></select></label></div><div className="report-card"><FileBarChart size={28}/><div><b>Eventos sísmicos filtrados</b><p>Incluye fecha UTC, magnitud, profundidad, coordenadas, fuente y URL de procedencia.</p><small>{rows.length} registros · corte {new Date().toLocaleString('es-PE')}</small></div><button className="primary" onClick={exportCsv}>Exportar CSV</button><button className="secondary" onClick={exportJson}>Exportar JSON</button></div><p className="muted-note">Los archivos contienen los registros cargados localmente desde la API; no incluyen eventos que aún no se hayan sincronizado.</p></Panel>}
+
+function ReportsPage({ events }: { events: EventItem[] }) {
+  const [q, setQ] = useState('');
+  const [min, setMin] = useState('0');
+  const [days, setDays] = useState('3650');
+
+  const rows = events.filter((e) =>
+    e.magnitude >= Number(min) &&
+    e.place.toLowerCase().includes(q.toLowerCase()) &&
+    new Date(e.occurred_at).getTime() >=
+      Date.now() - Number(days) * 86400000
+  );
+
+  const exportExcel = () => {
+    if (!rows.length) {
+      alert('No hay registros para exportar con los filtros seleccionados.');
+      return;
+    }
+
+    const sortedRows = [...rows].sort(
+      (a, b) =>
+        new Date(b.occurred_at).getTime() -
+        new Date(a.occurred_at).getTime()
+    );
+
+    const magnitudes = rows.map((e) => Number(e.magnitude));
+    const depths = rows.map((e) => Number(e.depth_km));
+
+    const maxMagnitude = Math.max(...magnitudes);
+    const avgMagnitude =
+      magnitudes.reduce((sum, value) => sum + value, 0) /
+      magnitudes.length;
+    const avgDepth =
+      depths.reduce((sum, value) => sum + value, 0) /
+      depths.length;
+
+    const generatedAt = new Date().toLocaleString('es-PE', {
+      timeZone: 'UTC',
+    });
+
+    const data = [
+      ['REPORTE DE REGISTROS SÍSMICOS'],
+      ['SismoPlatform Enterprise | Reporte de eventos registrados'],
+      [`Fecha de generación: ${generatedAt} UTC`],
+      [],
+      [
+        'TOTAL DE REGISTROS', '',
+        'MAGNITUD MÁXIMA', '',
+        'MAGNITUD PROMEDIO', '',
+        'PROFUNDIDAD PROMEDIO (KM)', '', '', '',
+      ],
+      [
+        rows.length, '',
+        maxMagnitude, '',
+        Number(avgMagnitude.toFixed(2)), '',
+        Number(avgDepth.toFixed(2)), '', '', '',
+      ],
+      [],
+      [
+        'N.º',
+        'Fecha y hora (UTC)',
+        'Magnitud',
+        'Ubicación',
+        'Profundidad (km)',
+        'Latitud',
+        'Longitud',
+        'Fuente / ID',
+        'URL de procedencia',
+      ],
+      ...sortedRows.map((e, index) => [
+        index + 1,
+        new Date(e.occurred_at).toISOString().replace('T', ' ').slice(0, 19),
+        Number(e.magnitude),
+        e.place || 'No especificada',
+        Number(e.depth_km),
+        Number(e.latitude),
+        Number(e.longitude),
+        e.source_id || e.external_id || 'No disponible',
+        e.source_url || '',
+      ]),
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(data);
+
+    // Título y encabezados superiores.
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 9 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 9 } },
+      { s: { r: 2, c: 0 }, e: { r: 2, c: 9 } },
+
+      { s: { r: 4, c: 0 }, e: { r: 4, c: 1 } },
+      { s: { r: 4, c: 2 }, e: { r: 4, c: 3 } },
+      { s: { r: 4, c: 4 }, e: { r: 4, c: 5 } },
+      { s: { r: 4, c: 6 }, e: { r: 4, c: 7 } },
+      { s: { r: 4, c: 8 }, e: { r: 4, c: 9 } },
+
+      { s: { r: 5, c: 0 }, e: { r: 5, c: 1 } },
+      { s: { r: 5, c: 2 }, e: { r: 5, c: 3 } },
+      { s: { r: 5, c: 4 }, e: { r: 5, c: 5 } },
+      { s: { r: 5, c: 6 }, e: { r: 5, c: 7 } },
+      { s: { r: 5, c: 8 }, e: { r: 5, c: 9 } },
+    ];
+
+    const navy = '17365D';
+    const blue = '24476B';
+    const lightBlue = 'DCE6F1';
+    const borderColor = 'D5DEE8';
+    const white = 'FFFFFF';
+
+    const border = {
+      top: { style: 'thin', color: borderColor },
+      bottom: { style: 'thin', color: borderColor },
+      left: { style: 'thin', color: borderColor },
+      right: { style: 'thin', color: borderColor },
+    };
+
+    // Estilo del título.
+    ws['A1'].s = {
+      font: { name: 'Aptos Display', sz: 20, bold: true, color: white },
+      fill: { patternType: 'solid', fgColor: { rgb: navy } },
+      alignment: { horizontal: 'center', vertical: 'center' },
+    };
+
+    ws['A2'].s = {
+      font: { name: 'Aptos', sz: 11, italic: true, color: white },
+      fill: { patternType: 'solid', fgColor: { rgb: blue } },
+      alignment: { horizontal: 'center', vertical: 'center' },
+    };
+
+    ws['A3'].s = {
+      font: { name: 'Aptos', sz: 10, color: '526579' },
+      alignment: { horizontal: 'right', vertical: 'center' },
+    };
+
+    // Tarjetas de resumen con bordes y colores corporativos.
+    const labelCells = ['A5', 'C5', 'E5', 'G5', 'I5'];
+    const valueCells = ['A6', 'C6', 'E6', 'G6', 'I6'];
+
+    labelCells.forEach((cell) => {
+      ws[cell].s = {
+        font: { name: 'Aptos', sz: 9, bold: true, color: white },
+        fill: { patternType: 'solid', fgColor: { rgb: blue } },
+        alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+        border,
+      };
+    });
+
+    valueCells.forEach((cell) => {
+      ws[cell].s = {
+        font: { name: 'Aptos Display', sz: 16, bold: true, color: navy },
+        fill: { patternType: 'solid', fgColor: { rgb: 'F0F5FA' } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+        border,
+      };
+    });
+
+    // Encabezados de la tabla.
+    const headerRow = 7;
+    const lastRow = headerRow + sortedRows.length;
+
+    for (let c = 0; c < 9; c++) {
+      const cell = XLSX.utils.encode_cell({ r: headerRow, c });
+      ws[cell].s = {
+        font: { name: 'Aptos', sz: 10, bold: true, color: white },
+        fill: { patternType: 'solid', fgColor: { rgb: navy } },
+        alignment: {
+          horizontal: 'center',
+          vertical: 'center',
+          wrapText: true,
+        },
+        border,
+      };
+    }
+
+    // Formato de los registros.
+    for (let r = headerRow + 1; r <= lastRow; r++) {
+      for (let c = 0; c < 9; c++) {
+        const cell = XLSX.utils.encode_cell({ r, c });
+        if (!ws[cell]) continue;
+
+        ws[cell].s = {
+          font: { name: 'Aptos', sz: 10, color: '263746' },
+          fill: {
+            patternType: 'solid',
+            fgColor: { rgb: r % 2 === 0 ? 'F2F6FA' : white },
+          },
+          alignment: {
+            vertical: 'center',
+            horizontal: [0, 2, 4, 5, 6].includes(c) ? 'center' : 'left',
+            wrapText: c === 3 || c === 7,
+          },
+          border,
+        };
+      }
+
+      // Magnitud con un decimal.
+      const magnitudeCell = `C${r + 1}`;
+      if (ws[magnitudeCell]) {
+        ws[magnitudeCell].z = '0.0';
+        const magnitude = Number(ws[magnitudeCell].v);
+
+        if (magnitude >= 6) {
+          ws[magnitudeCell].s = {
+            ...ws[magnitudeCell].s,
+            font: { name: 'Aptos', sz: 10, bold: true, color: 'C00000' },
+            fill: { patternType: 'solid', fgColor: { rgb: 'FCE4D6' } },
+          };
+        } else if (magnitude >= 4) {
+          ws[magnitudeCell].s = {
+            ...ws[magnitudeCell].s,
+            font: { name: 'Aptos', sz: 10, bold: true, color: '9C6500' },
+            fill: { patternType: 'solid', fgColor: { rgb: 'FFF2CC' } },
+          };
+        }
+      }
+
+      [`E${r + 1}`, `F${r + 1}`, `G${r + 1}`].forEach((cell) => {
+        if (ws[cell]) ws[cell].z = '0.0000';
+      });
+    }
+
+    // Anchos de columnas para que el reporte sea legible.
+    ws['!cols'] = [
+      { wch: 7 },
+      { wch: 22 },
+      { wch: 12 },
+      { wch: 38 },
+      { wch: 18 },
+      { wch: 14 },
+      { wch: 14 },
+      { wch: 24 },
+      { wch: 48 },
+      { wch: 4 },
+    ];
+
+    ws['!rows'] = [
+      { hpt: 36 },
+      { hpt: 24 },
+      { hpt: 20 },
+      { hpt: 10 },
+      { hpt: 30 },
+      { hpt: 32 },
+      { hpt: 10 },
+      { hpt: 32 },
+    ];
+
+    // Filtros para buscar registros dentro de Excel.
+    ws['!autofilter'] = {
+      ref: `A8:I${lastRow + 1}`,
+    };
+
+    // Configuración de impresión.
+    ws['!margins'] = {
+      left: 0.25,
+      right: 0.25,
+      top: 0.5,
+      bottom: 0.5,
+      header: 0.2,
+      footer: 0.2,
+    };
+
+    ws['!pageSetup'] = {
+      orientation: 'landscape',
+      fitToWidth: 1,
+      fitToHeight: 0,
+      paperSize: 9,
+    };
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Reporte sísmico');
+
+    XLSX.writeFile(
+      wb,
+      `Reporte_Sismico_${new Date().toISOString().slice(0, 10)}.xlsx`
+    );
+  };
+
+  return (
+    <Panel
+      title="Generador de reportes"
+      subtitle="Consulta los registros y exporta un Excel con presentación profesional"
+    >
+      <div className="toolbar">
+        <div className="searchbox">
+          <Search size={16} />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Ubicación / región"
+          />
+        </div>
+
+        <label>
+          Magnitud mínima
+          <select value={min} onChange={(e) => setMin(e.target.value)}>
+            <option value="0">Todas</option>
+            <option value="2">2+</option>
+            <option value="4">4+</option>
+            <option value="5">5+</option>
+            <option value="6">6+</option>
+          </select>
+        </label>
+
+        <label>
+          Período
+          <select value={days} onChange={(e) => setDays(e.target.value)}>
+            <option value="1">24 horas</option>
+            <option value="7">7 días</option>
+            <option value="30">30 días</option>
+            <option value="90">90 días</option>
+            <option value="365">1 año</option>
+            <option value="3650">Todo lo cargado</option>
+          </select>
+        </label>
+      </div>
+
+      <div className="report-card">
+        <FileBarChart size={28} />
+        <div>
+          <b>Reporte de registros sísmicos</b>
+          <p>
+            Excel con resumen estadístico, tabla ordenada, filtros,
+            formatos numéricos y presentación empresarial.
+          </p>
+          <small>{rows.length} registros encontrados</small>
+        </div>
+
+        <button className="primary" onClick={exportExcel}>
+          Exportar Excel (.xlsx)
+        </button>
+      </div>
+
+      <p className="muted-note">
+        El reporte utiliza los eventos cargados desde la API que coinciden
+        con los filtros seleccionados. No agrega registros inventados.
+      </p>
+    </Panel>
+  );
+}
 function downloadCSV(filename:string,header:string[],rows:any[][]){const lines=[header,...rows].map(row=>row.map(v=>`"${String(v??'').replaceAll('"','""')}"`).join(','));downloadFile(filename,'\ufeff'+lines.join('\r\n'),'text/csv;charset=utf-8')}
 function downloadFile(filename:string,content:string,type:string){const blob=new Blob([content],{type});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 function InfoPage({title,text}:{title:string;text:string}){return <Panel title={title} subtitle="Módulo del plan empresarial"><div className="placeholder"><div className="placeholder-icon"><Settings size={25}/></div><h3>Base del módulo preparada</h3><p>{text}</p><span className="tag muted">Pendiente de implementación operativa</span></div></Panel>}
