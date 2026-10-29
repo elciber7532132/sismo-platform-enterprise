@@ -156,7 +156,191 @@ function MLPage({events}:{events:EventItem[]}){
 function urlBase64ToUint8Array(base64String:string){const padding='='.repeat((4-base64String.length%4)%4);const base64=(base64String+padding).replace(/-/g,'+').replace(/_/g,'/');const raw=window.atob(base64);return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)))}
 async function registerPhonePush(){if(!('serviceWorker' in navigator)||!('PushManager' in window))throw new Error('Este navegador no admite Web Push. Usa Chrome/Edge en Android o Safari compatible en iOS, con HTTPS.');if(!('Notification' in window))throw new Error('Este navegador no admite notificaciones.');const permission=await Notification.requestPermission();if(permission!=='granted')throw new Error('Permiso de notificaciones denegado. Actívalo en los ajustes del navegador.');const apiBase=(import.meta.env.VITE_API_URL||'http://localhost:8000').replace(/\/$/,'');const keyRes=await fetch(`${apiBase}/api/v1/push/public-key`);if(!keyRes.ok)throw new Error('No se pudo consultar la configuración push de la API.');const key=await keyRes.json();if(!key.configured||!key.public_key)throw new Error('Falta configurar VAPID en el backend. Revisa la guía de alertas push en README.md y reinicia la API.');const sw=await navigator.serviceWorker.register('/sw.js');const ready=await navigator.serviceWorker.ready;let sub=await ready.pushManager.getSubscription();if(!sub)sub=await ready.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlBase64ToUint8Array(key.public_key)});const response=await fetch(`${apiBase}/api/v1/push/subscriptions`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(sub)});if(!response.ok)throw new Error(`No se pudo registrar el celular: ${await response.text()}`);return 'Celular registrado para recibir notificaciones push.'}
 function AlertRulesPage({events}:{events:EventItem[]}){const [notify,setNotify]=useState(()=>{try{return JSON.parse(localStorage.getItem('sismo-alert-config')||'{"enabled":false,"minMagnitude":5,"region":""}')}catch{return {enabled:false,minMagnitude:5,region:''}}});const [permission,setPermission]=useState(('Notification' in window)?Notification.permission:'unsupported');const [pushStatus,setPushStatus]=useState('');const [pushBusy,setPushBusy]=useState(false);const [autoMin,setAutoMin]=useState('5');const [autoEnabled,setAutoEnabled]=useState(true);useEffect(()=>{const base=(import.meta.env.VITE_API_URL||'http://localhost:8000').replace(/\/$/,'');fetch(`${base}/api/v1/alerts/automatic-config`).then(r=>r.ok?r.json():Promise.reject()).then(c=>{setAutoMin(String(c.min_magnitude));setAutoEnabled(Boolean(c.enabled))}).catch(()=>setPushStatus('No se pudo leer la configuración automática desde la API.'))},[]);const saveAutomatic=async(enabled:boolean,minimum:number)=>{const base=(import.meta.env.VITE_API_URL||'http://localhost:8000').replace(/\/$/,'');const r=await fetch(`${base}/api/v1/alerts/automatic-config`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled,min_magnitude:minimum})});const data=await r.json();if(!r.ok)throw new Error(data.detail||'No se pudo guardar la configuración automática.');setAutoEnabled(data.enabled);setAutoMin(String(data.min_magnitude));setPushStatus('Configuración automática guardada en el backend.');};const saveNotify=(next:any)=>{setNotify(next);localStorage.setItem('sismo-alert-config',JSON.stringify(next))};const enableNotifications=async()=>{try{setPushBusy(true);setPushStatus(await registerPhonePush());setPermission(('Notification'in window)?Notification.permission:'unsupported');saveNotify({...notify,enabled:true});}catch(e){setPushStatus(e instanceof Error?e.message:'No se pudo activar push.')}finally{setPushBusy(false)}};const sendTest=async()=>{setPushBusy(true);setPushStatus('Enviando alerta de prueba…');try{const apiBase=(import.meta.env.VITE_API_URL||'http://localhost:8000').replace(/\/$/,'');const response=await fetch(`${apiBase}/api/v1/alerts/test`,{method:'POST'});const data=await response.json();if(!response.ok)throw new Error(data.detail||'No se pudo enviar la prueba.');setPushStatus(data.message||'Alerta de prueba enviada.');}catch(e){setPushStatus(e instanceof Error?e.message:'Error al enviar la prueba.')}finally{setPushBusy(false)}};type Rule={id:string;name:string;minMagnitude:number;maxDepth:number;region:string;enabled:boolean};const [rules,setRules]=useState<Rule[]>(()=>{try{return JSON.parse(localStorage.getItem('sismo-alert-rules')||'[]')}catch{return []}});const [name,setName]=useState('Magnitud alta');const [minMag,setMinMag]=useState('5');const [maxDepth,setMaxDepth]=useState('700');const [region,setRegion]=useState('');useEffect(()=>{localStorage.setItem('sismo-alert-rules',JSON.stringify(rules))},[rules]);const add=()=>{if(!name.trim())return;setRules(old=>[{id:crypto.randomUUID(),name:name.trim(),minMagnitude:Number(minMag),maxDepth:Number(maxDepth),region:region.trim(),enabled:true},...old]);setName('Magnitud alta');};const matches=rules.reduce((n,r)=>n+(r.enabled?events.filter(e=>e.magnitude>=r.minMagnitude&&e.depth_km<=r.maxDepth&&(!r.region||e.place.toLowerCase().includes(r.region.toLowerCase()))).length:0),0);return <><Panel title="Alertas en el celular" subtitle="Registra este dispositivo, envía una prueba manual y configura avisos automáticos al sincronizar nuevos eventos"><div className="toolbar"><label>Magnitud mínima (avisos del navegador)<select value={String(notify.minMagnitude)} onChange={e=>saveNotify({...notify,minMagnitude:Number(e.target.value)})}><option value="2">2.0+</option><option value="3">3.0+</option><option value="4">4.0+</option><option value="5">5.0+</option><option value="6">6.0+</option></select></label><label>Ubicación contiene (filtro local)<input value={notify.region||''} onChange={e=>saveNotify({...notify,region:e.target.value})} placeholder="Perú, Chile…"/></label><span className={`tag ${permission==='granted'?'good':'muted'}`}>Permiso: {permission}</span><button className="primary" disabled={pushBusy} onClick={()=>void enableNotifications()}>{pushBusy?'Procesando…':'Registrar este celular'}</button><button className="secondary" disabled={pushBusy} onClick={()=>void sendTest()}>Enviar alerta manual de prueba</button></div>{pushStatus&&<div className={`banner ${pushStatus.toLowerCase().includes('error')||pushStatus.toLowerCase().includes('falta')||pushStatus.toLowerCase().includes('denegado')||pushStatus.toLowerCase().includes('no se pudo')?'warning':'success'}`}>{pushStatus}</div>}<div className="toolbar"><label>Umbral automático<select value={autoMin} onChange={e=>{const value=e.target.value;setAutoMin(value);void saveAutomatic(autoEnabled,Number(value)).catch(err=>setPushStatus(err instanceof Error?err.message:'Error de configuración'))}}><option value="3">M ≥ 3.0</option><option value="4">M ≥ 4.0</option><option value="5">M ≥ 5.0</option><option value="6">M ≥ 6.0</option></select></label><button className={autoEnabled?'secondary':'primary'} onClick={()=>{const next=!autoEnabled;void saveAutomatic(next,Number(autoMin)).catch(err=>setPushStatus(err instanceof Error?err.message:'Error de configuración'))}}>{autoEnabled?'Pausar modo automático':'Activar modo automático'}</button><span className={`tag ${autoEnabled?'good':'muted'}`}>{autoEnabled?'Activado en API':'Pausado en API'}</span></div><p className="muted-note">El envío manual push llega a todos los celulares registrados en el backend. Los avisos automáticos se disparan tras sincronizar USGS cuando entran eventos nuevos que superan el umbral configurado en el backend. Para avisos con la app cerrada se requiere HTTPS y claves VAPID. Esto informa de sismos reportados; no es una alerta oficial ni predice terremotos.</p></Panel><Panel title="Crear regla de detección" subtitle="Reglas locales de revisión para los registros almacenados"><div className="toolbar"><label>Nombre<input value={name} onChange={e=>setName(e.target.value)} placeholder="Ej. Magnitud alta en Perú"/></label><label>Magnitud mínima<select value={minMag} onChange={e=>setMinMag(e.target.value)}><option value="2">2+</option><option value="4">4+</option><option value="5">5+</option><option value="6">6+</option></select></label><label>Profundidad máxima<select value={maxDepth} onChange={e=>setMaxDepth(e.target.value)}><option value="70">70 km</option><option value="300">300 km</option><option value="700">700 km</option></select></label><label>Contiene ubicación (opcional)<input value={region} onChange={e=>setRegion(e.target.value)} placeholder="Peru, Chile…"/></label><button className="primary" onClick={add}>Guardar regla</button></div></Panel><Panel title="Reglas guardadas" subtitle={`${rules.length} reglas · se conservan en este navegador`}><div className="table-wrap"><table><thead><tr><th>Regla</th><th>Condiciones</th><th>Coincidencias actuales</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{rules.map(r=>{const count=events.filter(e=>e.magnitude>=r.minMagnitude&&e.depth_km<=r.maxDepth&&(!r.region||e.place.toLowerCase().includes(r.region.toLowerCase()))).length;return <tr key={r.id}><td>{r.name}</td><td>M ≥ {r.minMagnitude}; profundidad ≤ {r.maxDepth} km{r.region?`; ubicación: ${r.region}`:''}</td><td>{r.enabled?count:0}</td><td><span className={`tag ${r.enabled?'good':'muted'}`}>{r.enabled?'Activa':'Pausada'}</span></td><td><button className="secondary" onClick={()=>setRules(old=>old.map(x=>x.id===r.id?{...x,enabled:!x.enabled}:x))}>{r.enabled?'Pausar':'Activar'}</button> <button className="secondary" onClick={()=>setRules(old=>old.filter(x=>x.id!==r.id))}>Eliminar</button></td></tr>})}{!rules.length&&<tr><td colSpan={5}><Empty text="Todavía no hay reglas. Crea una para revisar los eventos cargados."/></td></tr>}</tbody></table></div><p className="muted-note">Coincidencias: {matches}. Antes de producción, conecta las reglas a la API, control de acceso, auditoría y proveedores oficiales.</p></Panel></>}
-function AlertCenterPage({events}:{events:EventItem[]}){const [minMag,setMinMag]=useState('4');const [status,setStatus]=useState('all');const rows=events.filter(e=>e.magnitude>=Number(minMag)).map(e=>({...e,alertStatus:e.magnitude>=6?'Prioridad alta':e.magnitude>=5?'Revisión':'Informativa'})).filter(e=>status==='all'||e.alertStatus===status);return <Panel title="Bandeja de revisión de eventos" subtitle="Alertas de observación derivadas de umbrales; no son alertas públicas u oficiales"><div className="toolbar"><label>Magnitud mínima<select value={minMag} onChange={e=>setMinMag(e.target.value)}><option value="2">2+</option><option value="4">4+</option><option value="5">5+</option><option value="6">6+</option></select></label><label>Prioridad<select value={status} onChange={e=>setStatus(e.target.value)}><option value="all">Todas</option><option>Prioridad alta</option><option>Revisión</option><option>Informativa</option></select></label><span className="tag muted">{rows.length} registros a revisar</span></div><div className="table-wrap"><table><thead><tr><th>Prioridad</th><th>Magnitud</th><th>Ubicación</th><th>Fecha UTC</th><th>Profundidad</th><th>Fuente</th></tr></thead><tbody>{rows.slice(0,300).map(e=><tr key={e.id}><td><span className={`tag ${e.alertStatus==='Prioridad alta'?'danger':e.alertStatus==='Revisión'?'warn':'muted'}`}>{e.alertStatus}</span></td><td>{e.magnitude.toFixed(1)}</td><td>{e.place}</td><td>{new Date(e.occurred_at).toLocaleString('es-PE',{timeZone:'UTC'})}</td><td>{e.depth_km.toFixed(1)} km</td><td>{e.source_id}</td></tr>)}{!rows.length&&<tr><td colSpan={6}><Empty text="No hay eventos que coincidan con estos filtros."/></td></tr>}</tbody></table></div></Panel>}
+function AlertCenterPage({ events }: { events: EventItem[] }) {
+  const [minMag, setMinMag] = useState('4');
+  const [status, setStatus] = useState('all');
+
+  const rows = events
+    .filter((e) => e.magnitude >= Number(minMag))
+    .map((e) => ({
+      ...e,
+      alertStatus:
+        e.magnitude >= 6
+          ? 'Prioridad alta'
+          : e.magnitude >= 5
+            ? 'Revisión'
+            : 'Informativa',
+    }))
+    .filter(
+      (e) => status === 'all' || e.alertStatus === status
+    )
+    .sort(
+      (a, b) =>
+        new Date(b.occurred_at).getTime() -
+        new Date(a.occurred_at).getTime()
+    );
+
+  const categories = [
+    { id: 'all', label: 'Todos' },
+    { id: 'Prioridad alta', label: 'Prioridad alta' },
+    { id: 'Revisión', label: 'Revisión' },
+    { id: 'Informativa', label: 'Informativa' },
+  ];
+
+  const countByCategory = (category: string) =>
+    events.filter((e) => {
+      const categoryMatches =
+        category === 'all' ||
+        (category === 'Prioridad alta' && e.magnitude >= 6) ||
+        (category === 'Revisión' &&
+          e.magnitude >= 5 &&
+          e.magnitude < 6) ||
+        (category === 'Informativa' && e.magnitude < 5);
+
+      return categoryMatches && e.magnitude >= Number(minMag);
+    }).length;
+
+  return (
+    <Panel
+      title="Bandeja de revisión de eventos"
+      subtitle="Clasificación automática por magnitud para facilitar la revisión. No representa alertas públicas u oficiales."
+    >
+      <div className="toolbar">
+        <label>
+          Magnitud mínima
+          <select
+            value={minMag}
+            onChange={(e) => setMinMag(e.target.value)}
+          >
+            <option value="2">2.0+</option>
+            <option value="4">4.0+</option>
+            <option value="5">5.0+</option>
+            <option value="6">6.0+</option>
+          </select>
+        </label>
+
+        <span className="tag muted">
+          {rows.length} eventos encontrados
+        </span>
+      </div>
+
+      <div className="alert-category-filters">
+        {categories.map((category) => (
+          <button
+            key={category.id}
+            type="button"
+            className={`alert-category-button ${
+              status === category.id ? 'active' : ''
+            }`}
+            onClick={() => setStatus(category.id)}
+            aria-pressed={status === category.id}
+          >
+            <span>{category.label}</span>
+            <span className="alert-category-count">
+              {countByCategory(category.id)}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Prioridad</th>
+              <th>Magnitud</th>
+              <th>Ubicación</th>
+              <th>Fecha UTC</th>
+              <th>Profundidad</th>
+              <th>Fuente</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {rows.slice(0, 300).map((e) => (
+              <tr key={e.id}>
+                <td>
+                  <span
+                    className={`tag ${
+                      e.alertStatus === 'Prioridad alta'
+                        ? 'danger'
+                        : e.alertStatus === 'Revisión'
+                          ? 'warn'
+                          : 'muted'
+                    }`}
+                  >
+                    {e.alertStatus}
+                  </span>
+                </td>
+
+                <td>
+                  <span
+                    className={`magnitude ${
+                      e.magnitude >= 6
+                        ? 'major'
+                        : e.magnitude >= 4
+                          ? 'moderate'
+                          : 'minor'
+                    }`}
+                  >
+                    {e.magnitude.toFixed(1)}
+                  </span>
+                </td>
+
+                <td className="place-cell">{e.place}</td>
+
+                <td>
+                  {new Date(e.occurred_at).toLocaleString('es-PE', {
+                    timeZone: 'UTC',
+                  })}
+                </td>
+
+                <td>{e.depth_km.toFixed(1)} km</td>
+
+                <td>
+                  {e.source_id}
+                  {e.source_url && (
+                    <a
+                      className="source-link"
+                      href={e.source_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label="Consultar evento en la fuente original"
+                      title="Ver evento en la fuente original"
+                    >
+                      <ExternalLink size={13} />
+                    </a>
+                  )}
+                </td>
+              </tr>
+            ))}
+
+            {!rows.length && (
+              <tr>
+                <td colSpan={6}>
+                  <Empty text="No hay eventos que coincidan con la categoría y la magnitud seleccionadas." />
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {rows.length > 300 && (
+        <p className="muted-note">
+          Se muestran los primeros 300 eventos de los {rows.length}{' '}
+          encontrados. Ajusta la magnitud mínima para reducir los resultados.
+        </p>
+      )}
+
+      <p className="muted-note">
+        Los niveles son criterios de clasificación de esta aplicación.
+        No equivalen a una evaluación oficial del riesgo ni predicen
+        daños o consecuencias.
+      </p>
+    </Panel>
+  );
+}
 function UsersRolesPage(){type User={id:string;name:string;email:string;role:string;enabled:boolean};const [users,setUsers]=useState<User[]>(()=>{try{return JSON.parse(localStorage.getItem('sismo-demo-users')||'[{"id":"u-admin","name":"Administrador de demostración","email":"admin@example.local","role":"Administrador","enabled":true},{"id":"u-analyst","name":"Analista de demostración","email":"analista@example.local","role":"Analista","enabled":true}]')}catch{return []}});const [name,setName]=useState('');const [email,setEmail]=useState('');const [role,setRole]=useState('Analista');const [q,setQ]=useState('');useEffect(()=>{localStorage.setItem('sismo-demo-users',JSON.stringify(users))},[users]);const add=()=>{if(!name.trim()||!/^\S+@\S+\.\S+$/.test(email))return;if(users.some(u=>u.email.toLowerCase()===email.toLowerCase())){alert('Ese correo ya existe en la lista de demostración.');return}setUsers(old=>[{id:crypto.randomUUID(),name:name.trim(),email:email.trim(),role,enabled:true},...old]);setName('');setEmail('')};return <><div className="banner warning">Modo demostración local: estos roles no protegen la API ni equivalen a autenticación. No uses datos personales reales.</div><Panel title="Usuarios y roles (demostración)" subtitle="Altas, búsqueda, activación y asignación de roles guardadas en este navegador"><div className="toolbar"><label>Nombre<input value={name} onChange={e=>setName(e.target.value)} placeholder="Nombre de usuario"/></label><label>Correo<input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="usuario@dominio.com"/></label><label>Rol<select value={role} onChange={e=>setRole(e.target.value)}><option>Administrador</option><option>Analista</option><option>Operador</option><option>Auditor</option><option>Consulta</option></select></label><button className="primary" onClick={add}>Agregar usuario</button><div className="searchbox"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar usuario…"/></div></div><div className="table-wrap"><table><thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{users.filter(u=>(u.name+' '+u.email+' '+u.role).toLowerCase().includes(q.toLowerCase())).map(u=><tr key={u.id}><td>{u.name}</td><td>{u.email}</td><td><select value={u.role} onChange={e=>setUsers(old=>old.map(x=>x.id===u.id?{...x,role:e.target.value}:x))}><option>Administrador</option><option>Analista</option><option>Operador</option><option>Auditor</option><option>Consulta</option></select></td><td><span className={`tag ${u.enabled?'good':'muted'}`}>{u.enabled?'Activo':'Inactivo'}</span></td><td><button className="secondary" onClick={()=>setUsers(old=>old.map(x=>x.id===u.id?{...x,enabled:!x.enabled}:x))}>{u.enabled?'Desactivar':'Activar'}</button> <button className="secondary" onClick={()=>{if(confirm('¿Eliminar este usuario de demostración?'))setUsers(old=>old.filter(x=>x.id!==u.id))}}>Eliminar</button></td></tr>)}</tbody></table></div></Panel></>}
 function ReportsPage({events}:{events:EventItem[]}){const [q,setQ]=useState('');const [min,setMin]=useState('0');const [days,setDays]=useState('3650');const rows=events.filter(e=>e.magnitude>=Number(min)&&e.place.toLowerCase().includes(q.toLowerCase())&&new Date(e.occurred_at).getTime()>=Date.now()-Number(days)*86400000);const exportCsv=()=>downloadCSV(`sismos-${new Date().toISOString().slice(0,10)}.csv`,['external_id','source','occurred_at_utc','latitude','longitude','magnitude','depth_km','place','source_url'],rows.map(e=>[e.external_id,e.source_id,e.occurred_at,e.latitude,e.longitude,e.magnitude,e.depth_km,e.place,e.source_url??'']));const exportJson=()=>downloadFile(`sismos-${new Date().toISOString().slice(0,10)}.json`,JSON.stringify({generated_at:new Date().toISOString(),record_count:rows.length,source_note:'Eventos reportados; no predicciones.',events:rows},null,2),'application/json');return <Panel title="Generador de reportes" subtitle="Filtra una muestra y exporta datos trazables en CSV o JSON"><div className="toolbar"><div className="searchbox"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Ubicación / región"/></div><label>Magnitud mínima<select value={min} onChange={e=>setMin(e.target.value)}><option value="0">Todas</option><option value="2">2+</option><option value="4">4+</option><option value="5">5+</option><option value="6">6+</option></select></label><label>Período<select value={days} onChange={e=>setDays(e.target.value)}><option value="1">24 horas</option><option value="7">7 días</option><option value="30">30 días</option><option value="90">90 días</option><option value="365">1 año</option><option value="3650">Todo lo cargado</option></select></label></div><div className="report-card"><FileBarChart size={28}/><div><b>Eventos sísmicos filtrados</b><p>Incluye fecha UTC, magnitud, profundidad, coordenadas, fuente y URL de procedencia.</p><small>{rows.length} registros · corte {new Date().toLocaleString('es-PE')}</small></div><button className="primary" onClick={exportCsv}>Exportar CSV</button><button className="secondary" onClick={exportJson}>Exportar JSON</button></div><p className="muted-note">Los archivos contienen los registros cargados localmente desde la API; no incluyen eventos que aún no se hayan sincronizado.</p></Panel>}
 function downloadCSV(filename:string,header:string[],rows:any[][]){const lines=[header,...rows].map(row=>row.map(v=>`"${String(v??'').replaceAll('"','""')}"`).join(','));downloadFile(filename,'\ufeff'+lines.join('\r\n'),'text/csv;charset=utf-8')}
