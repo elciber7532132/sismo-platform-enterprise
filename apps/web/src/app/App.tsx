@@ -5,6 +5,7 @@ import { api, syncUSGS } from '../services/api';
 import type { EventItem } from '../types';
 import SeismicMap from '../modules/mapa-sismico/SeismicMap';
 import EstimatesPage from '../modules/estimaciones/EstimatesPage';
+import * as XLSX from 'xlsx-js-style';
 
 type ModuleKey='Dashboard'|'Eventos sísmicos'|'Mapa sísmico'|'Análisis estadístico'|'Preparación de datos'|'Modelos de Machine Learning'|'Estimaciones experimentales'|'Reglas de alertas'|'Centro de alertas'|'Fuentes de datos'|'Reportes'|'Usuarios y roles'|'Auditoría y configuración';
 const groups=[{label:'OPERACIÓN',items:[['Dashboard',Gauge],['Eventos sísmicos',Waves],['Mapa sísmico',Globe2]]},{label:'ANÁLISIS',items:[['Análisis estadístico',ChartNoAxesCombined],['Preparación de datos',Database],['Modelos de Machine Learning',BrainCircuit],['Estimaciones experimentales',Activity]]},{label:'ALERTAS',items:[['Reglas de alertas',Layers3],['Centro de alertas',BellRing]]},{label:'ADMINISTRACIÓN',items:[['Fuentes de datos',RadioTower],['Reportes',FileBarChart],['Usuarios y roles',Users],['Auditoría y configuración',ShieldCheck]]}] as const;
