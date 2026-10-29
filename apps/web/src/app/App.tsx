@@ -10,7 +10,114 @@ type ModuleKey='Dashboard'|'Eventos sísmicos'|'Mapa sísmico'|'Análisis estad�
 const groups=[{label:'OPERACIÓN',items:[['Dashboard',Gauge],['Eventos sísmicos',Waves],['Mapa sísmico',Globe2]]},{label:'ANÁLISIS',items:[['Análisis estadístico',ChartNoAxesCombined],['Preparación de datos',Database],['Modelos de Machine Learning',BrainCircuit],['Estimaciones experimentales',Activity]]},{label:'ALERTAS',items:[['Reglas de alertas',Layers3],['Centro de alertas',BellRing]]},{label:'ADMINISTRACIÓN',items:[['Fuentes de datos',RadioTower],['Reportes',FileBarChart],['Usuarios y roles',Users],['Auditoría y configuración',ShieldCheck]]}] as const;
 const fmt=(s?:string|null)=>s?new Date(s).toLocaleString('es-PE',{dateStyle:'medium',timeStyle:'short'}):'Sin sincronización';
 export default function App(){const [active,setActive]=useState<ModuleKey>('Dashboard');const [mobile,setMobile]=useState(false);const [summary,setSummary]=useState<any>(null);const [events,setEvents]=useState<EventItem[]>([]);const [series,setSeries]=useState<any[]>([]);const [sources,setSources]=useState<any[]>([]);const [quality,setQuality]=useState<any>(null);const [audit,setAudit]=useState<any[]>([]);const [busy,setBusy]=useState(false);const [notice,setNotice]=useState('');const [error,setError]=useState('');
-const refresh=async()=>{setError('');try{const [s,t,src,q,a]=await Promise.all([api<any>('/api/v1/dashboard/summary'),api<any>('/api/v1/analytics/timeseries?days=30'),api<any>('/api/v1/sources'),api<any>('/api/v1/data-quality/summary'),api<any>('/api/v1/audit-logs')]);const all:EventItem[]=[];let offset=0,total=Infinity;while(offset<total){const page=await api<{items:EventItem[];total:number;limit:number;offset:number}>(`/api/v1/events?limit=1000&offset=${offset}`);all.push(...page.items);total=page.total;if(!page.items.length)break;offset+=page.items.length;}const previous=localStorage.getItem('sismo-seen-event-ids');const seen=new Set<string>(previous?JSON.parse(previous):[]);const config=JSON.parse(localStorage.getItem('sismo-alert-config')||'{"enabled":false,"minMagnitude":5,"region":""}');if(previous&&config.enabled&&'Notification' in window&&Notification.permission==='granted'){const fresh=all.filter(e=>!seen.has(String(e.id))&&e.magnitude>=Number(config.minMagnitude)&&(!config.region||e.place.toLowerCase().includes(String(config.region).toLowerCase()))).slice(0,5);fresh.forEach(e=>new Notification(`Sismo M ${e.magnitude.toFixed(1)}`,{body:`${e.place} · ${new Date(e.occurred_at).toLocaleString('es-PE')}`,icon:'/icons/icon-192.png',tag:`sismo-${e.id}`}));}localStorage.setItem('sismo-seen-event-ids',JSON.stringify(all.map(e=>String(e.id)).slice(0,5000)));setSummary(s);setEvents(all);setSeries(t.items);setSources(src);setQuality(q);setAudit(a)}catch(err){setError(err instanceof Error?err.message:'No se pudo conectar con la API.');}};
+
+const refresh = async () => {
+  setError('');
+
+  try {
+    const [s, t, src, q, a] = await Promise.all([
+      api<any>('/api/v1/dashboard/summary'),
+      api<any>('/api/v1/analytics/timeseries?days=30'),
+      api<any>('/api/v1/sources'),
+      api<any>('/api/v1/data-quality/summary'),
+      api<any>('/api/v1/audit-logs'),
+    ]);
+
+    const all: EventItem[] = [];
+    let offset = 0;
+    let total = Infinity;
+
+    while (offset < total) {
+      const page = await api<{
+        items: EventItem[];
+        total: number;
+        limit: number;
+        offset: number;
+      }>(`/api/v1/events?limit=1000&offset=${offset}`);
+
+      all.push(...page.items);
+      total = page.total;
+
+      if (!page.items.length) break;
+      offset += page.items.length;
+    }
+
+    const previous = localStorage.getItem('sismo-seen-event-ids');
+    const seen = new Set<string>(
+      previous ? JSON.parse(previous) : []
+    );
+
+    const config = JSON.parse(
+      localStorage.getItem('sismo-alert-config') ||
+        '{"enabled":false,"minMagnitude":5,"region":""}'
+    );
+
+    if (
+      previous &&
+      config.enabled &&
+      'Notification' in window &&
+      Notification.permission === 'granted' &&
+      'serviceWorker' in navigator
+    ) {
+      const fresh = all
+        .filter(
+          (e) =>
+            !seen.has(String(e.id)) &&
+            e.magnitude >= Number(config.minMagnitude) &&
+            (!config.region ||
+              e.place.toLowerCase().includes(
+                String(config.region).toLowerCase()
+              ))
+        )
+        .slice(0, 5);
+
+      if (fresh.length) {
+        try {
+          await navigator.serviceWorker.register('/sw.js');
+          const registration = await navigator.serviceWorker.ready;
+
+          for (const e of fresh) {
+            await registration.showNotification(
+              `Sismo M ${e.magnitude.toFixed(1)}`,
+              {
+                body: `${e.place} · ${new Date(
+                  e.occurred_at
+                ).toLocaleString('es-PE')}`,
+                icon: '/icons/icon-192.png',
+                tag: `sismo-${e.id}`,
+              }
+            );
+          }
+        } catch (notificationError) {
+          console.error(
+            'Error al mostrar notificaciones:',
+            notificationError
+          );
+        }
+      }
+    }
+
+    localStorage.setItem(
+      'sismo-seen-event-ids',
+      JSON.stringify(
+        all.map((e) => String(e.id)).slice(0, 5000)
+      )
+    );
+
+    setSummary(s);
+    setEvents(all);
+    setSeries(t.items);
+    setSources(src);
+    setQuality(q);
+    setAudit(a);
+  } catch (err) {
+    setError(
+      err instanceof Error
+        ? err.message
+        : 'No se pudo conectar con la API.'
+    );
+  }
+};
 useEffect(()=>{void refresh();const timer=window.setInterval(()=>void refresh(),60000);if('serviceWorker' in navigator)void navigator.serviceWorker.register('/sw.js').catch(()=>{});return()=>window.clearInterval(timer)},[]);
 const sync=async()=>{setBusy(true);setNotice('');try{const r=await syncUSGS(7);setNotice(`${r.message} Vistos: ${r.records_seen}; nuevos: ${r.records_inserted}.`);await refresh()}catch(e){setError(e instanceof Error?e.message:'Falló la sincronización')}finally{setBusy(false)}};
 const title=active;const nav=<>{groups.map(g=><div className="nav-group" key={g.label}><div className="nav-label">{g.label}</div>{g.items.map(([name,Icon])=><button key={name} className={`nav-item ${active===name?'active':''}`} onClick={()=>{setActive(name as ModuleKey);setMobile(false)}}><Icon size={17}/><span>{name}</span></button>)}</div>)}</>;
