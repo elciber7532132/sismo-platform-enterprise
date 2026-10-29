@@ -404,7 +404,7 @@ function ReportsPage({ events }: { events: EventItem[] }) {
       ])
     ];
 
-    const ws = XLSX.utils.aoa_to_sheet(data);
+    const ws: any = XLSX.utils.aoa_to_sheet(data);
 
     // Título y tarjetas de resumen
     ws['!merges'] = [
@@ -428,7 +428,6 @@ function ReportsPage({ events }: { events: EventItem[] }) {
     };
 
     const navy = '17365D';
-    const blue = 'DCE6F1';
     const white = 'FFFFFF';
 
     // Título
@@ -568,7 +567,7 @@ function ReportsPage({ events }: { events: EventItem[] }) {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Reporte sísmico');
 
-    XLSX.writeFile(wb, `Reporte_Sismico_${fecha}.xlsx`);
+    XLSX.writeFile(wb, `Reporte_Sismico_${fecha}.xlsx`, { bookType: 'xlsx', type: 'file' });
   };
 
   const exportJson = () =>
